@@ -1,0 +1,46 @@
+name: "Claude PR Review Agent"
+description: >
+  Reviews a pull request with Claude: commit quality, documentation, testing,
+  and security. Explores the checked-out codebase, posts inline comments, and
+  approves or requests changes.
+branding:
+  icon: "eye"
+  color: "orange"
+
+inputs:
+  anthropic_api_key:
+    description: "Anthropic API key."
+    required: true
+  github_token:
+    description: "Token used to read the PR and post the review (needs pull-requests: write)."
+    required: true
+  pr_number:
+    description: "Pull request number. Defaults to the PR from the triggering event."
+    required: false
+    default: ""
+  model:
+    description: "Claude model ID to review with."
+    required: false
+    default: "claude-opus-5"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install review agent dependencies
+      shell: bash
+      run: pip install --quiet -r "${{ github.action_path }}/requirements.txt"
+
+    - name: Run review agent
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+        REVIEW_MODEL: ${{ inputs.model }}
+        PYTHONPATH: ${{ github.action_path }}
+      run: python -m review_agent

@@ -1,0 +1,39 @@
+# Copy this file into any repository you want reviewed, as:
+#   .github/workflows/claude-review.yml
+#
+# Prerequisites (per repository, or at the org level):
+#   1. Add an ANTHROPIC_API_KEY secret (Settings -> Secrets and variables -> Actions).
+#   2. To let the agent APPROVE pull requests with the built-in GITHUB_TOKEN, enable
+#      Settings -> Actions -> General -> "Allow GitHub Actions to create and approve
+#      pull requests". (REQUEST_CHANGES and COMMENT work without it.)
+#
+
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Review with Claude
+        uses: yo-tandy/commit-checker@main
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
