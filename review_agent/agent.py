@@ -243,7 +243,7 @@ class ToolLoopAgent:
     def run(self, initial_prompt: str) -> tuple[str, dict]:
         messages: list[dict] = [{"role": "user", "content": initial_prompt}]
         terminal_list = " or ".join(sorted(self.terminal_names))
-        for _ in range(self.max_turns):
+        for turn in range(self.max_turns):
             response = self.client.beta.messages.create(
                 model=self.model,
                 max_tokens=16000,
