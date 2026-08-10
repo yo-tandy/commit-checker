@@ -7,8 +7,10 @@ A reusable GitHub Action that reviews pull requests with Claude. On every PR it:
 - evaluates **test coverage and quality** for the changed behavior,
 - hunts for **security risks** (injection, secrets, authz gaps, unsafe patterns),
 - explores the **whole checked-out codebase** with list/read/search tools — not just the diff,
-- posts a GitHub review with **inline comments** anchored to the diff, and
-- **approves, requests changes, or comments** based on what it found.
+- posts a GitHub review with **inline comments** anchored to the diff,
+- **approves, requests changes, or comments** based on what it found, and
+- **responds to replies** on its own comment threads — verifying claimed
+  fixes against the code, answering questions, and conceding when it's wrong.
 
 Powered by `claude-opus-5` via the official Anthropic Python SDK, with adaptive
 thinking and server-side refusal fallbacks enabled by default.
@@ -67,6 +69,30 @@ Details worth knowing:
   `request_changes` for probable bugs, security risks, committed secrets, or
   substantive untested behavior; `approve` when the change is solid;
   `comment` otherwise.
+
+## Responding to comment replies
+
+When someone replies in a thread rooted at one of the agent's inline comments
+(identified by an invisible `<!-- commit-checker -->` marker), the
+`pull_request_review_comment` trigger runs the agent in responder mode. It
+reads the whole thread, re-checks the current code, and either replies
+in-thread or deliberately stays silent:
+
+- "Fixed in abc123" → verifies the fix in the checkout; confirms, or points
+  out what's still missing (or notes the commit isn't pushed yet).
+- Questions → answered from the actual code.
+- Disagreement → re-examined; it concedes when wrong, and pushes back at most
+  once when the finding stands.
+- Bare acknowledgments ("ack", "will do") → no reply.
+
+Loop safety: comments from `*[bot]` accounts are ignored, and GitHub doesn't
+trigger workflows from events created by the default `GITHUB_TOKEN`, so the
+agent can't converse with itself.
+
+Known limitation: clicking **"Resolve conversation"** emits no workflow event
+(a GitHub platform gap), so the agent can't react to resolutions directly.
+Pushing new commits triggers a fresh full review, which covers the same
+ground.
 
 ## Running locally
 

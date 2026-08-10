@@ -55,6 +55,29 @@ class GitHubClient:
         resp.raise_for_status()
         return resp.text
 
+    def list_review_comments(self, number: int) -> list[dict]:
+        comments: list[dict] = []
+        page = 1
+        while True:
+            resp = self.session.get(
+                self._url(f"/pulls/{number}/comments"),
+                params={"per_page": 100, "page": page},
+            )
+            resp.raise_for_status()
+            batch = resp.json()
+            comments.extend(batch)
+            if len(batch) < 100:
+                return comments
+            page += 1
+
+    def reply_to_comment(self, number: int, comment_id: int, body: str) -> dict:
+        resp = self.session.post(
+            self._url(f"/pulls/{number}/comments/{comment_id}/replies"),
+            json={"body": body},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def create_review(
         self, number: int, event: str, body: str, comments: list[dict]
     ) -> dict:

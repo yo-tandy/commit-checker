@@ -1,4 +1,4 @@
-"""The Claude review loop: explore the repo with tools, then submit a verdict."""
+"""Claude agent loops: the PR reviewer and the comment-thread responder."""
 
 from __future__ import annotations
 
@@ -13,10 +13,9 @@ from .repo_tools import RepoTools
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "claude-opus-5"
-MAX_TURNS = 40
 INLINE_DIFF_LIMIT = 60_000  # above this, the model pulls per-file diffs on demand
 
-SYSTEM_PROMPT = """\
+REVIEW_SYSTEM_PROMPT = """\
 You are an automated senior code reviewer for GitHub pull requests. You review \
 the full change in context: you can list, read, and search any file in the \
 repository (checked out at the PR head), not just the diff.
@@ -60,7 +59,35 @@ Write the summary for the PR author: lead with the verdict rationale, then a \
 short assessment per dimension.\
 """
 
-TOOLS = [
+RESPONDER_SYSTEM_PROMPT = """\
+You are the automated code reviewer that previously reviewed this pull \
+request. A human has replied in a thread on one of your inline review \
+comments. Decide whether a response is needed, and respond only when it adds \
+value — silence is the right answer for pure acknowledgments.
+
+You can list, read, and search the repository at the PR's current head, and \
+fetch the current PR diff per file. Verify claims against the code before \
+responding.
+
+Guidelines:
+- Reply claims the issue is fixed: check the current code. If it is fixed, \
+post a one-line confirmation. If it is partially fixed or not fixed, say \
+precisely what is still missing, citing the file and line. If you cannot find \
+the fix at all, say so and note the commit may not be pushed yet.
+- Reply asks a question: answer it concretely, grounded in the actual code.
+- Reply disagrees with your finding: re-examine with fresh eyes. If they are \
+right, concede plainly. If the finding stands, explain why once, with \
+evidence — do not restate your original comment. At most one round of \
+pushback; if the author has clearly made their decision, accept it.
+- Pure acknowledgment with nothing to verify or answer ("ack", "will do", \
+an emoji): call no_response.
+
+Keep replies to a few sentences, specific and collegial — you are talking to \
+the PR author in a public thread. Finish by calling exactly one of post_reply \
+or no_response.\
+"""
+
+COMMON_TOOLS = [
     {
         "name": "list_files",
         "description": "List files tracked in the repository. Optionally filter with a glob pattern such as '*.py' or 'src/*'.",
@@ -98,75 +125,94 @@ TOOLS = [
     },
     {
         "name": "get_file_diff",
-        "description": "Return the PR diff for a single file. Use this when the full diff was too large to include up front.",
+        "description": "Return the PR diff for a single file.",
         "input_schema": {
             "type": "object",
             "properties": {"path": {"type": "string"}},
             "required": ["path"],
         },
     },
-    {
-        "name": "submit_review",
-        "description": "Submit the final review. Call exactly once, after your investigation is complete.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "verdict": {
-                    "type": "string",
-                    "enum": ["approve", "request_changes", "comment"],
-                },
-                "summary": {
-                    "type": "string",
-                    "description": "Markdown review body: verdict rationale, then commit quality / documentation / testing / security assessments.",
-                },
-                "comments": {
-                    "type": "array",
-                    "description": "Inline comments anchored to the diff.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "path": {"type": "string", "description": "Repo-relative file path."},
-                            "line": {"type": "integer", "description": "New-side line number appearing in the diff."},
-                            "body": {"type": "string", "description": "The comment, including severity and confidence."},
-                        },
-                        "required": ["path", "line", "body"],
-                    },
-                },
-            },
-            "required": ["verdict", "summary"],
-        },
-    },
 ]
 
+SUBMIT_REVIEW_TOOL = {
+    "name": "submit_review",
+    "description": "Submit the final review. Call exactly once, after your investigation is complete.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "verdict": {
+                "type": "string",
+                "enum": ["approve", "request_changes", "comment"],
+            },
+            "summary": {
+                "type": "string",
+                "description": "Markdown review body: verdict rationale, then commit quality / documentation / testing / security assessments.",
+            },
+            "comments": {
+                "type": "array",
+                "description": "Inline comments anchored to the diff.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Repo-relative file path."},
+                        "line": {"type": "integer", "description": "New-side line number appearing in the diff."},
+                        "body": {"type": "string", "description": "The comment, including severity and confidence."},
+                    },
+                    "required": ["path", "line", "body"],
+                },
+            },
+        },
+        "required": ["verdict", "summary"],
+    },
+}
 
-def build_initial_prompt(pr: dict, commits: list[dict], diff: str) -> str:
-    commit_lines = []
-    for c in commits:
-        sha = c["sha"][:10]
-        message = c["commit"]["message"]
-        commit_lines.append(f"- {sha} {message}")
-    parts = [
-        f"Review pull request #{pr['number']}: {pr['title']}",
-        f"Base: {pr['base']['ref']}  Head: {pr['head']['ref']}",
-        f"PR description:\n{pr.get('body') or '(none)'}",
-        f"Commits ({len(commits)}):\n" + "\n".join(commit_lines),
-    ]
-    if len(diff) <= INLINE_DIFF_LIMIT:
-        parts.append(f"Full diff:\n```diff\n{diff}\n```")
-    else:
-        files = sorted(per_file_diffs(diff))
-        parts.append(
-            "The diff is too large to include inline. Changed files are listed "
-            "below; fetch each one you review with get_file_diff:\n"
-            + "\n".join(f"- {f}" for f in files)
-        )
-    return "\n\n".join(parts)
+POST_REPLY_TOOL = {
+    "name": "post_reply",
+    "description": "Post a reply in the review comment thread. Call at most once.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "body": {"type": "string", "description": "Markdown reply, a few sentences."}
+        },
+        "required": ["body"],
+    },
+}
+
+NO_RESPONSE_TOOL = {
+    "name": "no_response",
+    "description": "Decide that no reply is needed for this thread.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "reason": {"type": "string", "description": "One line explaining why (for the workflow log only)."}
+        },
+        "required": ["reason"],
+    },
+}
 
 
-class ReviewAgent:
-    def __init__(self, repo_root: str, diff: str, model: str = DEFAULT_MODEL):
+class ToolLoopAgent:
+    """Generic agentic loop over the repo tools plus a set of terminal tools.
+
+    run() drives the conversation until the model calls a terminal tool, then
+    returns (terminal_tool_name, tool_input).
+    """
+
+    def __init__(
+        self,
+        repo_root: str,
+        diff: str,
+        system_prompt: str,
+        terminal_tools: list[dict],
+        model: str = DEFAULT_MODEL,
+        max_turns: int = 40,
+    ):
         self.client = anthropic.Anthropic()
         self.model = model
+        self.max_turns = max_turns
+        self.system_prompt = system_prompt
+        self.tool_defs = COMMON_TOOLS + terminal_tools
+        self.terminal_names = {t["name"] for t in terminal_tools}
         self.tools = RepoTools(repo_root)
         self.file_diffs = per_file_diffs(diff)
 
@@ -191,11 +237,10 @@ class ReviewAgent:
         except Exception as exc:  # tool errors go back to the model, not up the stack
             return f"error: {exc}"
 
-    def run(self, initial_prompt: str) -> dict:
-        """Drive the agentic loop until submit_review is called. Returns the
-        review dict: {verdict, summary, comments}."""
+    def run(self, initial_prompt: str) -> tuple[str, dict]:
         messages: list[dict] = [{"role": "user", "content": initial_prompt}]
-        for turn in range(MAX_TURNS):
+        terminal_list = " or ".join(sorted(self.terminal_names))
+        for _ in range(self.max_turns):
             response = self.client.beta.messages.create(
                 model=self.model,
                 max_tokens=16000,
@@ -203,14 +248,14 @@ class ReviewAgent:
                 fallbacks="default",
                 output_config={"effort": "high"},
                 cache_control={"type": "ephemeral"},
-                system=SYSTEM_PROMPT,
-                tools=TOOLS,
+                system=self.system_prompt,
+                tools=self.tool_defs,
                 messages=messages,
             )
 
             if response.stop_reason == "refusal":
                 raise RuntimeError(
-                    "The model (and its fallback chain) declined to review this PR: "
+                    "The model (and its fallback chain) declined this task: "
                     f"{getattr(response.stop_details, 'explanation', None) or 'no explanation provided'}"
                 )
 
@@ -218,22 +263,20 @@ class ReviewAgent:
             tool_uses = [b for b in response.content if b.type == "tool_use"]
 
             if not tool_uses:
-                # Ended without submitting — nudge once per occurrence.
                 messages.append(
                     {
                         "role": "user",
-                        "content": "You have not called submit_review yet. "
-                        "Finish your investigation and call submit_review with your verdict.",
+                        "content": f"You have not finished: call {terminal_list} to complete the task.",
                     }
                 )
                 continue
 
             results = []
-            review: dict | None = None
+            terminal: tuple[str, dict] | None = None
             for tu in tool_uses:
-                if tu.name == "submit_review":
-                    review = dict(tu.input)
-                    result = "Review recorded."
+                if tu.name in self.terminal_names:
+                    terminal = (tu.name, dict(tu.input))
+                    result = "Recorded."
                 else:
                     logger.info("tool call %s(%s)", tu.name, json.dumps(tu.input)[:200])
                     result = self._dispatch(tu.name, dict(tu.input))
@@ -241,7 +284,81 @@ class ReviewAgent:
                     {"type": "tool_result", "tool_use_id": tu.id, "content": result}
                 )
             messages.append({"role": "user", "content": results})
-            if review is not None:
-                return review
+            if terminal is not None:
+                return terminal
 
-        raise RuntimeError(f"review did not complete within {MAX_TURNS} turns")
+        raise RuntimeError(f"agent did not complete within {self.max_turns} turns")
+
+
+def build_review_prompt(pr: dict, commits: list[dict], diff: str) -> str:
+    commit_lines = []
+    for c in commits:
+        sha = c["sha"][:10]
+        message = c["commit"]["message"]
+        commit_lines.append(f"- {sha} {message}")
+    parts = [
+        f"Review pull request #{pr['number']}: {pr['title']}",
+        f"Base: {pr['base']['ref']}  Head: {pr['head']['ref']}",
+        f"PR description:\n{pr.get('body') or '(none)'}",
+        f"Commits ({len(commits)}):\n" + "\n".join(commit_lines),
+    ]
+    if len(diff) <= INLINE_DIFF_LIMIT:
+        parts.append(f"Full diff:\n```diff\n{diff}\n```")
+    else:
+        files = sorted(per_file_diffs(diff))
+        parts.append(
+            "The diff is too large to include inline. Changed files are listed "
+            "below; fetch each one you review with get_file_diff:\n"
+            + "\n".join(f"- {f}" for f in files)
+        )
+    return "\n\n".join(parts)
+
+
+def build_responder_prompt(pr: dict, thread: list[dict], trigger: dict) -> str:
+    thread_lines = []
+    for c in thread:
+        author = c["user"]["login"]
+        marker = " (this is you, the reviewer)" if author.endswith("[bot]") else ""
+        thread_lines.append(f"--- {author}{marker} at {c['created_at']}:\n{c['body']}")
+    root = thread[0]
+    return "\n\n".join(
+        [
+            f"Pull request #{pr['number']}: {pr['title']} "
+            f"(base {pr['base']['ref']}, head {pr['head']['ref']})",
+            f"The thread is anchored at `{root['path']}` line {root.get('line') or root.get('original_line')}."
+            f"\nDiff hunk at the time of the original comment:\n```diff\n{root.get('diff_hunk', '')}\n```",
+            "Full thread, oldest first:\n" + "\n\n".join(thread_lines),
+            f"The reply you are reacting to is the one from {trigger['user']['login']} "
+            f"at {trigger['created_at']}. Investigate as needed, then call "
+            "post_reply or no_response.",
+        ]
+    )
+
+
+def run_review(
+    repo_root: str, diff: str, pr: dict, commits: list[dict], model: str = DEFAULT_MODEL
+) -> dict:
+    agent = ToolLoopAgent(
+        repo_root, diff, REVIEW_SYSTEM_PROMPT, [SUBMIT_REVIEW_TOOL], model=model
+    )
+    _, review = agent.run(build_review_prompt(pr, commits, diff))
+    return review
+
+
+def run_responder(
+    repo_root: str,
+    diff: str,
+    pr: dict,
+    thread: list[dict],
+    trigger: dict,
+    model: str = DEFAULT_MODEL,
+) -> tuple[str, dict]:
+    agent = ToolLoopAgent(
+        repo_root,
+        diff,
+        RESPONDER_SYSTEM_PROMPT,
+        [POST_REPLY_TOOL, NO_RESPONSE_TOOL],
+        model=model,
+        max_turns=20,
+    )
+    return agent.run(build_responder_prompt(pr, thread, trigger))
