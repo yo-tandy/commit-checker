@@ -39,6 +39,9 @@ Process:
 - Start from the diff and commit list, then read the surrounding code you need \
 to judge correctness and context. Check whether tests and docs elsewhere in \
 the repo already cover the change before flagging their absence.
+- Batch independent tool calls in a single turn — fetch several file diffs or \
+read several files at once. Your budget is a limited number of turns, not a \
+limited number of tool calls, so serial one-call turns waste it.
 - Report every issue you find, including ones you are uncertain about or \
 consider low-severity, and state your confidence and severity for each. Do not \
 pad with style nits that don't affect correctness, security, or maintainability.
@@ -283,9 +286,21 @@ class ToolLoopAgent:
                 results.append(
                     {"type": "tool_result", "tool_use_id": tu.id, "content": result}
                 )
-            messages.append({"role": "user", "content": results})
             if terminal is not None:
+                messages.append({"role": "user", "content": results})
                 return terminal
+            remaining = self.max_turns - turn - 1
+            if remaining <= 3:
+                results.append(
+                    {
+                        "type": "text",
+                        "text": f"[turn budget] Only {remaining} turn(s) remain. "
+                        f"Stop investigating and call {terminal_list} now, based on "
+                        "what you have already learned — an incomplete-but-submitted "
+                        "assessment is required; note any areas you could not verify.",
+                    }
+                )
+            messages.append({"role": "user", "content": results})
 
         raise RuntimeError(f"agent did not complete within {self.max_turns} turns")
 
@@ -335,11 +350,22 @@ def build_responder_prompt(pr: dict, thread: list[dict], trigger: dict) -> str:
     )
 
 
+def review_turn_budget(diff: str) -> int:
+    """Scale the turn budget with PR size so large diffs get room to breathe."""
+    n_files = max(1, len(per_file_diffs(diff)))
+    return min(120, 30 + 3 * n_files)
+
+
 def run_review(
     repo_root: str, diff: str, pr: dict, commits: list[dict], model: str = DEFAULT_MODEL
 ) -> dict:
     agent = ToolLoopAgent(
-        repo_root, diff, REVIEW_SYSTEM_PROMPT, [SUBMIT_REVIEW_TOOL], model=model
+        repo_root,
+        diff,
+        REVIEW_SYSTEM_PROMPT,
+        [SUBMIT_REVIEW_TOOL],
+        model=model,
+        max_turns=review_turn_budget(diff),
     )
     _, review = agent.run(build_review_prompt(pr, commits, diff))
     return review
