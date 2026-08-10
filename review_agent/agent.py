@@ -335,11 +335,25 @@ def build_responder_prompt(pr: dict, thread: list[dict], trigger: dict) -> str:
     )
 
 
+def review_turn_budget(diff: str) -> int:
+    """Turn budget scaled to diff size. The flat default (40) starves large
+    PRs — a 37-file diff exhausted it before the agent could submit — while
+    small PRs never come close. Floor stays at the old default; the cap bounds
+    cost on pathological diffs."""
+    files = len(per_file_diffs(diff))
+    return min(150, max(40, 10 + 4 * files))
+
+
 def run_review(
     repo_root: str, diff: str, pr: dict, commits: list[dict], model: str = DEFAULT_MODEL
 ) -> dict:
     agent = ToolLoopAgent(
-        repo_root, diff, REVIEW_SYSTEM_PROMPT, [SUBMIT_REVIEW_TOOL], model=model
+        repo_root,
+        diff,
+        REVIEW_SYSTEM_PROMPT,
+        [SUBMIT_REVIEW_TOOL],
+        model=model,
+        max_turns=review_turn_budget(diff),
     )
     _, review = agent.run(build_review_prompt(pr, commits, diff))
     return review
