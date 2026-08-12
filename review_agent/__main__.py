@@ -155,6 +155,11 @@ def respond_to_comment(gh: GitHubClient, event: dict, repo_root: str, model: str
 
 
 def main() -> int:
+    # CI passes both credential inputs through as env vars; drop empty ones so
+    # the Claude CLI's credential precedence can't select a blank key.
+    for var in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN"):
+        if var in os.environ and not os.environ[var].strip():
+            del os.environ[var]
     if not (
         os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
     ):
