@@ -31,6 +31,10 @@ inputs:
     description: "Optional per-run spend cap passed to Claude Code (--max-budget-usd)."
     required: false
     default: ""
+  claude_code_version:
+    description: "Claude Code npm version to install."
+    required: false
+    default: "2.1.228"
 
 runs:
   using: "composite"
@@ -45,9 +49,12 @@ runs:
       run: |
         pip install --quiet -r "${{ github.action_path }}/requirements.txt"
         if ! command -v claude >/dev/null 2>&1; then
-          npm install -g @anthropic-ai/claude-code \
+          npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
             || { curl -fsSL https://claude.ai/install.sh | bash; echo "$HOME/.local/bin" >> "$GITHUB_PATH"; }
         fi
+        claude --version
+      env:
+        CLAUDE_CODE_VERSION: ${{ inputs.claude_code_version }}
 
     - name: Run review agent
       shell: bash
