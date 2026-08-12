@@ -12,8 +12,15 @@ A reusable GitHub Action that reviews pull requests with Claude. On every PR it:
 - **responds to replies** on its own comment threads — verifying claimed
   fixes against the code, answering questions, and conceding when it's wrong.
 
-Powered by `claude-opus-5` via the official Anthropic Python SDK, with adaptive
-thinking and server-side refusal fallbacks enabled by default.
+Powered by **Claude Code (CLI)** running headless in the workflow: it supplies
+the agent loop and its own Read/Grep/Glob/Bash tools (restricted to read-only
+plus scoped `git` commands), while a thin Python wrapper prepares PR context,
+enforces structured output, validates comment anchors, and posts the review.
+
+**Auth — two options** (provide exactly one):
+- `anthropic_api_key` — a metered Anthropic API key, or
+- `claude_code_oauth_token` — a token from running `claude setup-token`
+  locally, which bills your Claude subscription instead of an API key.
 
 ## Setup
 
@@ -34,21 +41,26 @@ thinking and server-side refusal fallbacks enabled by default.
 
 | Input | Required | Default | Description |
 |---|---|---|---|
-| `anthropic_api_key` | yes | — | Anthropic API key |
+| `anthropic_api_key` | one of the two | — | Anthropic API key (metered) |
+| `claude_code_oauth_token` | one of the two | — | Token from `claude setup-token` (subscription billing) |
 | `github_token` | yes | — | Token with `pull-requests: write` |
 | `pr_number` | no | from event | Review a specific PR (useful for `workflow_dispatch`) |
-| `model` | no | `claude-opus-5` | Claude model ID |
+| `model` | no | `claude-opus-5` | Model alias or full ID (`opus`, `claude-opus-5`, …) |
+| `max_budget_usd` | no | — | Per-run spend cap (passed to `--max-budget-usd`) |
 
 ## How it works
 
 ```
-gather PR (title, body, commits, diff)
+gather PR (title, body, commits, diff) ──► context files (pr.md, diff.patch)
         │
         ▼
-Claude agent loop ──── tools: list_files / read_file / search / get_file_diff
-        │                     (sandboxed to the repo root, PR head checkout)
+claude --bare -p ... --json-schema <review schema>
+   --permission-mode dontAsk
+   --allowedTools "Read,Grep,Glob,Bash(git diff *),..."   (read-only)
+   --max-turns <scaled with diff size>
+        │
         ▼
-submit_review(verdict, summary, inline comments)
+structured review {verdict, summary, comments}
         │
         ▼
 validate comment anchors against the diff ──► POST /pulls/{n}/reviews
@@ -57,14 +69,17 @@ validate comment anchors against the diff ──► POST /pulls/{n}/reviews
 
 Details worth knowing:
 
-- **Large diffs**: if the diff exceeds ~60 KB it isn't inlined; the agent sees
-  the changed-file list and pulls per-file diffs on demand.
+- **Claude Code runs `--bare`**: hooks, skills, MCP servers, and CLAUDE.md
+  files in the reviewed repo are *not* loaded, so a PR can't inject
+  instructions into its own reviewer through those channels.
+- **Read-only by construction**: no Edit/Write tools, Bash limited to scoped
+  `git`/`ls` commands, and `--permission-mode dontAsk` auto-denies everything
+  else.
+- **Turn budget scales with PR size** (`30 + 3/file`, capped at 120), with an
+  optional `max_budget_usd` spend cap on top.
 - **Comment validation**: GitHub rejects inline comments on lines outside the
   diff, so proposed anchors are validated first; anything unanchorable is
   folded into the review body instead of being dropped.
-- **Refusals**: the request opts into Anthropic's server-side fallback chain
-  (`fallbacks: "default"`), so a safety-classifier decline is retried on the
-  recommended fallback model automatically.
 - **Verdict policy** (tunable in `review_agent/agent.py`):
   `request_changes` for probable bugs, security risks, committed secrets, or
   substantive untested behavior; `approve` when the change is solid;
@@ -97,8 +112,10 @@ ground.
 ## Running locally
 
 ```bash
-pip install -r requirements.txt
-export ANTHROPIC_API_KEY=...      # or `ant auth login`
+pip install -r requirements.txt   # requests only
+# claude CLI must be installed and authenticated (`claude` login, or export
+# ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN)
+export ANTHROPIC_API_KEY=...
 export GITHUB_TOKEN=...           # repo-scoped token
 export GITHUB_REPOSITORY=owner/name
 export PR_NUMBER=123
@@ -108,9 +125,11 @@ python -m review_agent
 
 ## Cost & safety notes
 
-- Each review is a multi-turn agentic run on Opus 5; expect roughly a few cents
-  to a few tens of cents per PR depending on diff size and repo exploration.
-- The agent's file tools are read-only and confined to the repository root.
+- Each review is a multi-turn agentic run; expect roughly a few cents to a few
+  tens of cents per PR on an API key, or subscription usage with an OAuth
+  token. Set `max_budget_usd` for a hard per-run cap.
+- The reviewer's tools are read-only; it runs `--bare`, so repo-local
+  configuration can't influence it.
 - Treat the agent's approval as one signal, not a replacement for required
   human review on sensitive repositories — branch protection rules remain
   yours to configure.

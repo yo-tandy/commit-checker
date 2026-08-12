@@ -1,16 +1,21 @@
 name: "Claude PR Review Agent"
 description: >
-  Reviews a pull request with Claude: commit quality, documentation, testing,
-  and security. Explores the checked-out codebase, posts inline comments, and
-  approves or requests changes.
+  Reviews a pull request with Claude Code: commit quality, documentation,
+  testing, and security. Explores the checked-out codebase, posts inline
+  comments, responds to replies, and approves or requests changes.
 branding:
   icon: "eye"
   color: "orange"
 
 inputs:
   anthropic_api_key:
-    description: "Anthropic API key."
-    required: true
+    description: "Anthropic API key (metered). Provide this or claude_code_oauth_token."
+    required: false
+    default: ""
+  claude_code_oauth_token:
+    description: "Claude Code OAuth token from `claude setup-token` (Claude subscription). Provide this or anthropic_api_key."
+    required: false
+    default: ""
   github_token:
     description: "Token used to read the PR and post the review (needs pull-requests: write)."
     required: true
@@ -19,9 +24,13 @@ inputs:
     required: false
     default: ""
   model:
-    description: "Claude model ID to review with."
+    description: "Claude model for the review (alias or full ID, e.g. opus, claude-opus-5)."
     required: false
     default: "claude-opus-5"
+  max_budget_usd:
+    description: "Optional per-run spend cap passed to Claude Code (--max-budget-usd)."
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -31,16 +40,23 @@ runs:
       with:
         python-version: "3.12"
 
-    - name: Install review agent dependencies
+    - name: Install dependencies
       shell: bash
-      run: pip install --quiet -r "${{ github.action_path }}/requirements.txt"
+      run: |
+        pip install --quiet -r "${{ github.action_path }}/requirements.txt"
+        if ! command -v claude >/dev/null 2>&1; then
+          npm install -g @anthropic-ai/claude-code \
+            || { curl -fsSL https://claude.ai/install.sh | bash; echo "$HOME/.local/bin" >> "$GITHUB_PATH"; }
+        fi
 
     - name: Run review agent
       shell: bash
       env:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude_code_oauth_token }}
         GITHUB_TOKEN: ${{ inputs.github_token }}
         PR_NUMBER: ${{ inputs.pr_number }}
         REVIEW_MODEL: ${{ inputs.model }}
+        MAX_BUDGET_USD: ${{ inputs.max_budget_usd }}
         PYTHONPATH: ${{ github.action_path }}
       run: python -m review_agent

@@ -155,6 +155,13 @@ def respond_to_comment(gh: GitHubClient, event: dict, repo_root: str, model: str
 
 
 def main() -> int:
+    if not (
+        os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    ):
+        raise SystemExit(
+            "No Claude credentials: set ANTHROPIC_API_KEY (API key) or "
+            "CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`, Claude subscription)."
+        )
     repo = os.environ["GITHUB_REPOSITORY"]
     token = os.environ["GITHUB_TOKEN"]
     repo_root = os.environ.get("GITHUB_WORKSPACE", os.getcwd())
