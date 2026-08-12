@@ -207,10 +207,17 @@ def run_claude(
         Path(system_file).unlink(missing_ok=True)
 
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"claude exited with {proc.returncode}: "
-            f"{(proc.stderr or proc.stdout or '').strip()[-800:]}"
-        )
+        # The CLI emits its result JSON even on failure — surface the actual
+        # error (e.g. "Credit balance is too low") instead of a JSON tail.
+        detail = (proc.stderr or proc.stdout or "").strip()[-800:]
+        try:
+            data = json.loads(proc.stdout)
+            reason = data.get("result") or data.get("terminal_reason") or ""
+            if reason:
+                detail = f"{reason} (api_error_status={data.get('api_error_status')})"
+        except (json.JSONDecodeError, TypeError):
+            pass
+        raise RuntimeError(f"claude exited with {proc.returncode}: {detail}")
     result = _extract_structured(proc.stdout)
     try:
         cost = json.loads(proc.stdout).get("total_cost_usd")
