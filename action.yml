@@ -56,18 +56,6 @@ runs:
       env:
         CLAUDE_CODE_VERSION: ${{ inputs.claude_code_version }}
 
-    - name: Auth preflight (debug)
-      shell: bash
-      env:
-        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
-        CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude_code_oauth_token }}
-      run: |
-        [ -z "$ANTHROPIC_API_KEY" ] && unset ANTHROPIC_API_KEY
-        [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && unset CLAUDE_CODE_OAUTH_TOKEN
-        echo "credential env vars present:"; env | grep -oE "^(ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_AUTH_TOKEN)" || echo "(none)"
-        claude --setting-sources user -p "Reply with exactly: OK" \
-          --output-format json --model claude-opus-5 --max-turns 1 || true
-
     - name: Run review agent
       shell: bash
       env:
