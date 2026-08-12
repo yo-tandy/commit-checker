@@ -53,7 +53,8 @@ def test_run_review_invokes_cli_and_returns_structured():
 
         argv = json.load(open(args_log))
         flags = argv["argv"]
-        assert "--bare" in flags and "-p" in flags
+        assert "--bare" not in flags and "-p" in flags
+        assert flags[flags.index("--setting-sources") + 1] == "user"
         assert "--json-schema" in flags and "--permission-mode" in flags
         assert flags[flags.index("--model") + 1] == "claude-opus-5"
         assert flags[flags.index("--max-turns") + 1] == str(review_turn_budget(DIFF))

@@ -179,7 +179,11 @@ def run_claude(
         system_file = f.name
     cmd = [
         claude_bin,
-        "--bare",
+        # Load only user-level settings (absent on a fresh CI runner) so the
+        # reviewed repo's hooks/settings can't influence its own reviewer.
+        # Deliberately NOT --bare: bare mode skips CLAUDE_CODE_OAUTH_TOKEN
+        # resolution, which breaks subscription auth in CI.
+        "--setting-sources", "user",
         "-p", prompt,
         "--output-format", "json",
         "--json-schema", json.dumps(schema),
