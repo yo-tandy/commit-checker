@@ -2,7 +2,9 @@
 #   .github/workflows/claude-review.yml
 #
 # Prerequisites (per repository, or at the org level):
-#   1. Add an ANTHROPIC_API_KEY secret (Settings -> Secrets and variables -> Actions).
+#   1. Add a CLAUDE_CODE_OAUTH_TOKEN secret (from `claude setup-token`; bills your
+#      Claude subscription). Alternatively use an ANTHROPIC_API_KEY secret and pass
+#      it as the anthropic_api_key input instead (metered API billing).
 #   2. To let the agent APPROVE pull requests with the built-in GITHUB_TOKEN, enable
 #      Settings -> Actions -> General -> "Allow GitHub Actions to create and approve
 #      pull requests". (REQUEST_CHANGES and COMMENT work without it.)
@@ -38,5 +40,5 @@ jobs:
       - name: Review with Claude
         uses: yo-tandy/commit-checker@main
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
