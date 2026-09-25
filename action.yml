@@ -24,9 +24,9 @@ inputs:
     required: false
     default: ""
   model:
-    description: "Claude model for the review (alias or full ID, e.g. opus, claude-opus-5)."
+    description: "Claude model for the review (alias or full ID, e.g. sonnet, claude-opus-5)."
     required: false
-    default: "claude-opus-5"
+    default: "claude-sonnet-5"
   max_budget_usd:
     description: "Optional per-run spend cap passed to Claude Code (--max-budget-usd)."
     required: false

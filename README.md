@@ -45,7 +45,7 @@ enforces structured output, validates comment anchors, and posts the review.
 | `claude_code_oauth_token` | one of the two | — | Token from `claude setup-token` (subscription billing) |
 | `github_token` | yes | — | Token with `pull-requests: write` |
 | `pr_number` | no | from event | Review a specific PR (useful for `workflow_dispatch`) |
-| `model` | no | `claude-opus-5` | Model alias or full ID (`opus`, `claude-opus-5`, …) |
+| `model` | no | `claude-sonnet-5` | Model alias or full ID (`sonnet`, `claude-opus-5`, …) |
 | `max_budget_usd` | no | — | Per-run spend cap (passed to `--max-budget-usd`) |
 
 ## How it works
