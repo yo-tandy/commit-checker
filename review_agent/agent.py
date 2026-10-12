@@ -50,10 +50,27 @@ authn/authz gaps, secrets in code or config, unsafe deserialization, path \
 traversal, risky dependency or workflow changes.
 
 Report every issue you find, including ones you are uncertain about or \
-consider low-severity, and state your confidence and severity for each. Do not \
-pad with style nits that don't affect correctness, security, or \
-maintainability. Check whether tests and docs elsewhere in the repo already \
-cover the change before flagging their absence.
+consider low-severity. Do not pad with style nits that don't affect \
+correctness, security, or maintainability. Check whether tests and docs \
+elsewhere in the repo already cover the change before flagging their absence.
+
+Writing style — your reader is a developer skimming a PR page, not someone \
+who watched your investigation:
+- Each inline comment is at most 3 short sentences: (1) what is wrong, in \
+plain language; (2) the concrete consequence — what breaks, when; (3) the \
+fix, if it isn't obvious from the first two. Open with a bracketed tag like \
+[bug, high confidence] or [security, low] instead of prose about severity \
+and confidence.
+- Being readable matters more than being complete. Include only what changes \
+what the reader does next; drop walkthroughs of code they can see, lists of \
+things you checked that were fine, and restatements of the diff.
+- Write complete sentences in plain words. No arrow chains, no stacked \
+clauses, no jargon where an everyday word works. Name the exact function or \
+file once, then talk about it like a colleague would.
+- The summary is at most ~150 words: two or three sentences on why the \
+verdict, then one sentence per dimension (commits, docs, tests, security) — \
+a single line such as "Tests: the new tie-breaking rule is covered." is \
+ideal when a dimension is fine.
 
 Verdict criteria:
 - "request_changes": a probable bug, a security risk, a committed secret, or \
@@ -101,7 +118,7 @@ REVIEW_SCHEMA = {
         "verdict": {"type": "string", "enum": ["approve", "request_changes", "comment"]},
         "summary": {
             "type": "string",
-            "description": "Markdown review body: verdict rationale, then commit quality / documentation / testing / security assessments.",
+            "description": "Markdown review body, at most ~150 words: verdict rationale in 2-3 sentences, then one sentence per dimension (commits, docs, tests, security).",
         },
         "comments": {
             "type": "array",
@@ -111,7 +128,7 @@ REVIEW_SCHEMA = {
                 "properties": {
                     "path": {"type": "string", "description": "Repo-relative file path."},
                     "line": {"type": "integer", "description": "New-side line number appearing in the diff."},
-                    "body": {"type": "string", "description": "The comment, including severity and confidence."},
+                    "body": {"type": "string", "description": "At most 3 short sentences in plain language, opening with a bracketed tag like [bug, high confidence]: what's wrong, the concrete consequence, the fix."},
                 },
                 "required": ["path", "line", "body"],
                 "additionalProperties": False,
