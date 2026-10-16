@@ -78,7 +78,18 @@ def full_review(gh: GitHubClient, event: dict, repo_root: str, model: str) -> in
         gh.repo, pr_number, len(commits), len(diff), model,
     )
 
-    review = run_review(repo_root, diff, pr, commits, model=model)
+    previous = [
+        r
+        for r in gh.list_reviews(pr_number)
+        if r.get("user", {}).get("login", "").endswith("[bot]")
+        and (r.get("body") or "").strip()
+    ]
+    if previous:
+        logger.info("Found %d previous bot review(s); passing as context.", len(previous))
+
+    review = run_review(
+        repo_root, diff, pr, commits, model=model, previous_reviews=previous
+    )
 
     verdict = review.get("verdict", "comment")
     gh_event = VERDICT_TO_EVENT.get(verdict, "COMMENT")

@@ -72,13 +72,27 @@ verdict, then one sentence per dimension (commits, docs, tests, security) — \
 a single line such as "Tests: the new tie-breaking rule is covered." is \
 ideal when a dimension is fine.
 
-Verdict criteria:
-- "request_changes": a probable bug, a security risk, a committed secret, or \
-substantive changed behavior with no test coverage at all.
-- "approve": the change is correct and reasonably tested/documented; only \
-minor or optional suggestions remain.
-- "comment": you have observations worth sharing but nothing that clearly \
-blocks, or you could not verify enough to judge confidently.
+Verdict criteria — the verdict is a merge decision, not a summary of how much \
+you found:
+- "request_changes": something must change before merge — a probable bug in \
+the change's intended behavior, a security risk, a committed secret, or \
+substantive new behavior with no test coverage at all.
+- "approve": nothing blocks the merge. Non-blocking observations do NOT \
+lower the verdict: report them as inline comments tagged [non-blocking] and \
+approve anyway. If you would describe every finding as an edge case, low \
+impact, or not worth blocking over, the verdict is approve — never "comment".
+- "comment": reserved for one case — you could not verify enough to form a \
+judgment (e.g. could not inspect the files that matter). It is not a middle \
+ground between approve and request_changes.
+
+Re-reviews: when a previous-reviews context file is provided, you have \
+reviewed this PR before. Hold a consistent bar: do not re-raise non-blocking \
+observations already noted (the author has seen them; one line "previous \
+non-blocking notes still apply" suffices), and a finding you did not treat as \
+blocking before does not become blocking now unless new commits changed its \
+impact. If the previous blocking findings are addressed and nothing new \
+blocks, approve — do not keep the PR in review by surfacing fresh \
+low-severity observations each round.
 
 Inline comments must point at a file path and new-side line number that \
 appears in the PR diff; anything about the change as a whole belongs in the \
@@ -259,17 +273,27 @@ def write_context_files(context_dir: str, files: dict[str, str]) -> dict[str, st
 
 
 def build_review_prompt(pr: dict, commits: list[dict], paths: dict[str, str]) -> str:
-    return (
-        f"Review pull request #{pr['number']}: {pr['title']}\n"
-        f"Base: {pr['base']['ref']}  Head: {pr['head']['ref']}\n\n"
+    lines = [
+        f"Review pull request #{pr['number']}: {pr['title']}",
+        f"Base: {pr['base']['ref']}  Head: {pr['head']['ref']}",
+        "",
         "Start by reading these context files (outside the repo, already "
-        "accessible to you):\n"
-        f"- {paths['pr.md']} — PR description and the full commit list\n"
-        f"- {paths['diff.patch']} — the complete PR diff (unified format)\n\n"
+        "accessible to you):",
+        f"- {paths['pr.md']} — PR description and the full commit list",
+        f"- {paths['diff.patch']} — the complete PR diff (unified format)",
+    ]
+    if "previous-reviews.md" in paths:
+        lines.append(
+            f"- {paths['previous-reviews.md']} — your own previous reviews of "
+            "this PR; apply the re-review rules from your instructions"
+        )
+    lines += [
+        "",
         "Then explore the repository as needed and produce your review as "
         "structured output matching the provided schema. Inline comment line "
-        "numbers must be new-side lines present in the diff."
-    )
+        "numbers must be new-side lines present in the diff.",
+    ]
+    return "\n".join(lines)
 
 
 def build_responder_prompt(pr: dict, trigger: dict, paths: dict[str, str]) -> str:
@@ -309,14 +333,30 @@ def format_thread(thread: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def format_previous_reviews(reviews: list[dict]) -> str:
+    """Render this bot's past reviews of the PR (latest few) for re-review context."""
+    parts = []
+    for r in reviews[-3:]:
+        parts.append(
+            f"--- review at {r.get('submitted_at', '?')} "
+            f"(verdict: {r.get('state', '?')}):\n{(r.get('body') or '').strip()}\n"
+        )
+    return "# Your previous reviews of this PR (oldest first)\n\n" + "\n".join(parts)
+
+
 def run_review(
-    repo_root: str, diff: str, pr: dict, commits: list[dict], model: str = DEFAULT_MODEL
+    repo_root: str,
+    diff: str,
+    pr: dict,
+    commits: list[dict],
+    model: str = DEFAULT_MODEL,
+    previous_reviews: list[dict] | None = None,
 ) -> dict:
     with tempfile.TemporaryDirectory(prefix="commit-checker-ctx-") as context_dir:
-        paths = write_context_files(
-            context_dir,
-            {"pr.md": format_pr_context(pr, commits), "diff.patch": diff},
-        )
+        files = {"pr.md": format_pr_context(pr, commits), "diff.patch": diff}
+        if previous_reviews:
+            files["previous-reviews.md"] = format_previous_reviews(previous_reviews)
+        paths = write_context_files(context_dir, files)
         return run_claude(
             build_review_prompt(pr, commits, paths),
             REVIEW_SYSTEM_PROMPT,

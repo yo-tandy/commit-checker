@@ -55,6 +55,21 @@ class GitHubClient:
         resp.raise_for_status()
         return resp.text
 
+    def list_reviews(self, number: int) -> list[dict]:
+        reviews: list[dict] = []
+        page = 1
+        while True:
+            resp = self.session.get(
+                self._url(f"/pulls/{number}/reviews"),
+                params={"per_page": 100, "page": page},
+            )
+            resp.raise_for_status()
+            batch = resp.json()
+            reviews.extend(batch)
+            if len(batch) < 100:
+                return reviews
+            page += 1
+
     def list_review_comments(self, number: int) -> list[dict]:
         comments: list[dict] = []
         page = 1
