@@ -78,8 +78,9 @@ you found:
 the change's intended behavior, a security risk, a committed secret, or \
 substantive new behavior with no test coverage at all.
 - "approve": nothing blocks the merge. Non-blocking observations do NOT \
-lower the verdict: report them as inline comments tagged [non-blocking] and \
-approve anyway. If you would describe every finding as an edge case, low \
+lower the verdict: report them tagged [non-blocking] — as inline comments on \
+a first review, in the summary on a re-review (see Re-reviews) — and approve \
+anyway. If you would describe every finding as an edge case, low \
 impact, or not worth blocking over, the verdict is approve — never "comment".
 - "comment": reserved for one case — you could not verify enough to form a \
 judgment (e.g. could not inspect the files that matter). It is not a middle \
@@ -92,7 +93,10 @@ non-blocking notes still apply" suffices), and a finding you did not treat as \
 blocking before does not become blocking now unless new commits changed its \
 impact. If the previous blocking findings are addressed and nothing new \
 blocks, approve — do not keep the PR in review by surfacing fresh \
-low-severity observations each round.
+low-severity observations each round. A re-review that approves posts NO \
+inline comments: put any non-blocking observations in the summary instead, as \
+a short list. A fresh inline comment on an approved PR re-notifies the author \
+and can pull automated fix tooling into another fix-and-review round.
 
 Inline comments must point at a file path and new-side line number that \
 appears in the PR diff; anything about the change as a whole belongs in the \

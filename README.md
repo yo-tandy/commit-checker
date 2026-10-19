@@ -84,6 +84,11 @@ Details worth knowing:
   `request_changes` for probable bugs, security risks, committed secrets, or
   substantive untested behavior; `approve` when the change is solid;
   `comment` otherwise.
+- **Approving re-reviews post no inline comments**: on a re-review that
+  approves, non-blocking observations go into the review body under
+  "Non-blocking notes" (enforced in code, not just the prompt). A fresh
+  inline comment on an approved PR re-notifies the author and can pull
+  auto-fix tooling into another fix-and-review round.
 
 ## Responding to comment replies
 

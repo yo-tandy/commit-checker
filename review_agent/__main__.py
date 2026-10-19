@@ -49,6 +49,14 @@ def resolve_pr_number(event: dict) -> int:
     )
 
 
+def fold_comments_into_summary(summary: str, comments: list[dict], heading: str) -> str:
+    """Append inline-comment findings to the review summary as a list."""
+    return summary + f"\n\n---\n### {heading}\n" + "\n".join(
+        f"- `{c.get('path', '?')}:{c.get('line', '?')}` — {c.get('body', '')}"
+        for c in comments
+    )
+
+
 def validate_comments(
     comments: list[dict], valid_lines: dict[str, set[int]]
 ) -> tuple[list[dict], list[dict]]:
@@ -94,14 +102,18 @@ def full_review(gh: GitHubClient, event: dict, repo_root: str, model: str) -> in
     verdict = review.get("verdict", "comment")
     gh_event = VERDICT_TO_EVENT.get(verdict, "COMMENT")
     summary = review.get("summary", "").strip() or "(no summary provided)"
-    good, bad = validate_comments(review.get("comments") or [], commentable_lines(diff))
+    comments = review.get("comments") or []
+    if previous and verdict == "approve" and comments:
+        # An approving re-review posts no inline comments: each one re-notifies
+        # the author and can wake auto-fix tooling into another fix-and-review
+        # round over notes that don't block the merge.
+        summary = fold_comments_into_summary(summary, comments, "Non-blocking notes")
+        comments = []
+    good, bad = validate_comments(comments, commentable_lines(diff))
     for c in good:
         c["body"] = c["body"] + "\n\n" + MARKER
     if bad:
-        summary += "\n\n---\n### Findings outside the diff\n" + "\n".join(
-            f"- `{c.get('path', '?')}:{c.get('line', '?')}` — {c.get('body', '')}"
-            for c in bad
-        )
+        summary = fold_comments_into_summary(summary, bad, "Findings outside the diff")
 
     body = f"## Automated review — verdict: **{verdict.replace('_', ' ')}**\n\n{summary}"
     posted = gh.create_review(pr_number, gh_event, body, good)
