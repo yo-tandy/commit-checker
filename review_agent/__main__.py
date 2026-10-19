@@ -21,6 +21,10 @@ logger = logging.getLogger("review_agent")
 # Invisible tag appended to every comment we post; identifies our threads.
 MARKER = "<!-- commit-checker -->"
 
+# Every review body this agent posts starts with this; identifies our reviews
+# among other bots' (Dependabot, Copilot, ...) when building re-review context.
+REVIEW_HEADER = "## Automated review — verdict:"
+
 VERDICT_TO_EVENT = {
     "approve": "APPROVE",
     "request_changes": "REQUEST_CHANGES",
@@ -90,7 +94,7 @@ def full_review(gh: GitHubClient, event: dict, repo_root: str, model: str) -> in
         r
         for r in gh.list_reviews(pr_number)
         if r.get("user", {}).get("login", "").endswith("[bot]")
-        and (r.get("body") or "").strip()
+        and (r.get("body") or "").strip().startswith(REVIEW_HEADER)
     ]
     if previous:
         logger.info("Found %d previous bot review(s); passing as context.", len(previous))
@@ -115,7 +119,7 @@ def full_review(gh: GitHubClient, event: dict, repo_root: str, model: str) -> in
     if bad:
         summary = fold_comments_into_summary(summary, bad, "Findings outside the diff")
 
-    body = f"## Automated review — verdict: **{verdict.replace('_', ' ')}**\n\n{summary}"
+    body = f"{REVIEW_HEADER} **{verdict.replace('_', ' ')}**\n\n{summary}"
     posted = gh.create_review(pr_number, gh_event, body, good)
     logger.info(
         "Posted %s review %s with %d inline comment(s): %s",

@@ -11,8 +11,13 @@ DIFF = "diff --git a/x.py b/x.py\n+++ b/x.py\n@@ -1 +1,2 @@\n line\n+new\n"
 
 BOT_REVIEW = {
     "user": {"login": "github-actions[bot]"},
-    "body": "earlier review",
+    "body": main.REVIEW_HEADER + " **approve**\n\nearlier review",
     "state": "APPROVED",
+}
+OTHER_BOT_REVIEW = {
+    "user": {"login": "dependabot[bot]"},
+    "body": "Bumps requests from 2.31 to 2.32.",
+    "state": "COMMENTED",
 }
 NIT = {"path": "x.py", "line": 2, "body": "[non-blocking] nit"}
 
@@ -73,6 +78,14 @@ def test_first_review_keeps_inline_comments():
     assert "Non-blocking notes" not in posted["body"]
 
 
+def test_unrelated_bot_review_is_not_rereview_history():
+    posted = post_review(
+        [OTHER_BOT_REVIEW], {"verdict": "approve", "summary": "ok", "comments": [NIT]}
+    )
+    assert len(posted["comments"]) == 1
+    assert "Non-blocking notes" not in posted["body"]
+
+
 def test_rereview_requesting_changes_keeps_inline_comments():
     posted = post_review(
         [BOT_REVIEW],
@@ -94,6 +107,7 @@ def test_out_of_diff_comments_still_fold_on_first_review():
 if __name__ == "__main__":
     test_approving_rereview_folds_comments_into_summary()
     test_first_review_keeps_inline_comments()
+    test_unrelated_bot_review_is_not_rereview_history()
     test_rereview_requesting_changes_keeps_inline_comments()
     test_out_of_diff_comments_still_fold_on_first_review()
     print("POSTING_OK")
