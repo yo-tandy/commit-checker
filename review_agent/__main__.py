@@ -21,6 +21,10 @@ logger = logging.getLogger("review_agent")
 # Invisible tag appended to every comment we post; identifies our threads.
 MARKER = "<!-- commit-checker -->"
 
+# Every review body this agent posts starts with this; identifies our reviews
+# among other bots' (Dependabot, Copilot, ...) when building re-review context.
+REVIEW_HEADER = "## Automated review — verdict:"
+
 VERDICT_TO_EVENT = {
     "approve": "APPROVE",
     "request_changes": "REQUEST_CHANGES",
@@ -46,6 +50,14 @@ def resolve_pr_number(event: dict) -> int:
         return int(event["issue"]["number"])
     raise SystemExit(
         "Could not determine the PR number: set PR_NUMBER or run on a pull_request event."
+    )
+
+
+def fold_comments_into_summary(summary: str, comments: list[dict], heading: str) -> str:
+    """Append inline-comment findings to the review summary as a list."""
+    return summary + f"\n\n---\n### {heading}\n" + "\n".join(
+        f"- `{c.get('path', '?')}:{c.get('line', '?')}` — {c.get('body', '')}"
+        for c in comments
     )
 
 
@@ -82,7 +94,7 @@ def full_review(gh: GitHubClient, event: dict, repo_root: str, model: str) -> in
         r
         for r in gh.list_reviews(pr_number)
         if r.get("user", {}).get("login", "").endswith("[bot]")
-        and (r.get("body") or "").strip()
+        and (r.get("body") or "").strip().startswith(REVIEW_HEADER)
     ]
     if previous:
         logger.info("Found %d previous bot review(s); passing as context.", len(previous))
@@ -94,16 +106,20 @@ def full_review(gh: GitHubClient, event: dict, repo_root: str, model: str) -> in
     verdict = review.get("verdict", "comment")
     gh_event = VERDICT_TO_EVENT.get(verdict, "COMMENT")
     summary = review.get("summary", "").strip() or "(no summary provided)"
-    good, bad = validate_comments(review.get("comments") or [], commentable_lines(diff))
+    comments = review.get("comments") or []
+    if previous and verdict == "approve" and comments:
+        # An approving re-review posts no inline comments: each one re-notifies
+        # the author and can wake auto-fix tooling into another fix-and-review
+        # round over notes that don't block the merge.
+        summary = fold_comments_into_summary(summary, comments, "Non-blocking notes")
+        comments = []
+    good, bad = validate_comments(comments, commentable_lines(diff))
     for c in good:
         c["body"] = c["body"] + "\n\n" + MARKER
     if bad:
-        summary += "\n\n---\n### Findings outside the diff\n" + "\n".join(
-            f"- `{c.get('path', '?')}:{c.get('line', '?')}` — {c.get('body', '')}"
-            for c in bad
-        )
+        summary = fold_comments_into_summary(summary, bad, "Findings outside the diff")
 
-    body = f"## Automated review — verdict: **{verdict.replace('_', ' ')}**\n\n{summary}"
+    body = f"{REVIEW_HEADER} **{verdict.replace('_', ' ')}**\n\n{summary}"
     posted = gh.create_review(pr_number, gh_event, body, good)
     logger.info(
         "Posted %s review %s with %d inline comment(s): %s",
