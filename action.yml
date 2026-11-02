@@ -1,8 +1,9 @@
 name: "Claude PR Review Agent"
 description: >
-  Reviews a pull request with Claude Code: commit quality, documentation,
-  testing, and security. Explores the checked-out codebase, posts inline
-  comments, responds to replies, and approves or requests changes.
+  Reviews a pull request with Claude Code: commit quality, PR description,
+  documentation, testing, and security. Explores the checked-out codebase,
+  posts inline comments, responds to replies, and approves or requests
+  changes.
 branding:
   icon: "eye"
   color: "orange"
@@ -29,6 +30,13 @@ inputs:
     default: "claude-sonnet-5"
   max_budget_usd:
     description: "Optional per-run spend cap passed to Claude Code (--max-budget-usd)."
+    required: false
+    default: ""
+  review_guidance:
+    description: >-
+      Optional repository-specific guidance for the reviewer, e.g. "this
+      service runs in production; weight security findings higher" or
+      "generated files under gen/ are expected in commits".
     required: false
     default: ""
   claude_code_version:
@@ -65,5 +73,6 @@ runs:
         PR_NUMBER: ${{ inputs.pr_number }}
         REVIEW_MODEL: ${{ inputs.model }}
         MAX_BUDGET_USD: ${{ inputs.max_budget_usd }}
+        REVIEW_GUIDANCE: ${{ inputs.review_guidance }}
         PYTHONPATH: ${{ github.action_path }}
       run: python -m review_agent

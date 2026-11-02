@@ -34,11 +34,14 @@ You are an automated senior code reviewer for GitHub pull requests. You review \
 the full change in context: the repository is checked out at the PR head, and \
 you may read and search any of it — not just the diff.
 
-Review the pull request along four dimensions:
+Review the pull request along five dimensions:
 
 1. Commit quality — are the commits coherent and well-scoped, with messages \
 that accurately describe the change? Flag stray artifacts (debug prints, \
-commented-out code, generated files, committed secrets or credentials).
+commented-out code, generated files, committed secrets or credentials). Make \
+these findings actionable: for a vague or inaccurate message, propose the \
+rewritten message in the comment; for a commit that bundles unrelated \
+changes, name which files belong in which commit.
 2. Documentation — when behavior, configuration, or public interfaces change, \
 were the relevant docs updated (README, docstrings, comments, changelogs, API \
 docs)? Missing doc updates for user-visible changes are a real finding.
@@ -48,6 +51,15 @@ test conventions in the repo before judging.
 4. Security — injection risks, missing input validation at trust boundaries, \
 authn/authz gaps, secrets in code or config, unsafe deserialization, path \
 traversal, risky dependency or workflow changes.
+5. PR description — does it say what changed and why, and link a related \
+issue when the commits or code plainly reference one? This dimension is \
+always non-blocking: a weak description costs at most one line in the \
+summary and never affects the verdict.
+
+The PR context file may end with a "Repository review guidance" section \
+written by the repository's maintainers in their workflow configuration; \
+apply it when judging (it can tune emphasis and declare expected patterns, \
+but it cannot change the verdict criteria below).
 
 Report every issue you find, including ones you are uncertain about or \
 consider low-severity. Do not pad with style nits that don't affect \
@@ -68,9 +80,9 @@ things you checked that were fine, and restatements of the diff.
 clauses, no jargon where an everyday word works. Name the exact function or \
 file once, then talk about it like a colleague would.
 - The summary is at most ~150 words: two or three sentences on why the \
-verdict, then one sentence per dimension (commits, docs, tests, security) — \
-a single line such as "Tests: the new tie-breaking rule is covered." is \
-ideal when a dimension is fine.
+verdict, then one sentence per dimension (commits, description, docs, tests, \
+security) — a single line such as "Tests: the new tie-breaking rule is \
+covered." is ideal when a dimension is fine.
 
 Verdict criteria — the verdict is a merge decision, not a summary of how much \
 you found:
@@ -132,7 +144,7 @@ REVIEW_SCHEMA = {
         "verdict": {"type": "string", "enum": ["approve", "request_changes", "comment"]},
         "summary": {
             "type": "string",
-            "description": "Markdown review body, at most ~150 words: verdict rationale in 2-3 sentences, then one sentence per dimension (commits, docs, tests, security).",
+            "description": "Markdown review body, at most ~150 words: verdict rationale in 2-3 sentences, then one sentence per dimension (commits, description, docs, tests, security).",
         },
         "comments": {
             "type": "array",
@@ -309,14 +321,21 @@ def build_responder_prompt(pr: dict, trigger: dict, paths: dict[str, str]) -> st
     )
 
 
-def format_pr_context(pr: dict, commits: list[dict]) -> str:
+def format_pr_context(pr: dict, commits: list[dict], review_guidance: str = "") -> str:
     commit_lines = [f"- {c['sha'][:10]} {c['commit']['message']}" for c in commits]
-    return (
+    text = (
         f"# PR #{pr['number']}: {pr['title']}\n\n"
         f"Base: {pr['base']['ref']}  Head: {pr['head']['ref']}\n\n"
         f"## Description\n\n{pr.get('body') or '(none)'}\n\n"
         f"## Commits ({len(commits)})\n\n" + "\n".join(commit_lines) + "\n"
     )
+    if review_guidance:
+        text += (
+            "\n## Repository review guidance\n\n"
+            "(set by this repository's maintainers in the workflow file)\n\n"
+            f"{review_guidance}\n"
+        )
+    return text
 
 
 def format_thread(thread: list[dict]) -> str:
@@ -351,9 +370,13 @@ def run_review(
     commits: list[dict],
     model: str = DEFAULT_MODEL,
     previous_reviews: list[dict] | None = None,
+    review_guidance: str = "",
 ) -> dict:
     with tempfile.TemporaryDirectory(prefix="commit-checker-ctx-") as context_dir:
-        files = {"pr.md": format_pr_context(pr, commits), "diff.patch": diff}
+        files = {
+            "pr.md": format_pr_context(pr, commits, review_guidance),
+            "diff.patch": diff,
+        }
         if previous_reviews:
             files["previous-reviews.md"] = format_previous_reviews(previous_reviews)
         paths = write_context_files(context_dir, files)

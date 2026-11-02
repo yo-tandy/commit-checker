@@ -88,7 +88,13 @@ def full_review(gh: GitHubClient, event: dict, repo_root: str, model: str) -> in
         logger.info("Found %d previous bot review(s); passing as context.", len(previous))
 
     review = run_review(
-        repo_root, diff, pr, commits, model=model, previous_reviews=previous
+        repo_root,
+        diff,
+        pr,
+        commits,
+        model=model,
+        previous_reviews=previous,
+        review_guidance=os.environ.get("REVIEW_GUIDANCE", "").strip(),
     )
 
     verdict = review.get("verdict", "comment")

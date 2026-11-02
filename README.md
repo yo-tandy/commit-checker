@@ -2,7 +2,11 @@
 
 A reusable GitHub Action that reviews pull requests with Claude. On every PR it:
 
-- reads the **commit history** of the PR and judges commit quality and messages,
+- reads the **commit history** of the PR and judges commit quality and
+  messages — proposing a rewritten message or a concrete split when a commit
+  is vague or bundles unrelated changes,
+- judges the **PR description** (what changed, why, linked issues) — always
+  non-blocking,
 - checks whether **documentation** was updated where behavior changed,
 - evaluates **test coverage and quality** for the changed behavior,
 - hunts for **security risks** (injection, secrets, authz gaps, unsafe patterns),
@@ -47,6 +51,7 @@ enforces structured output, validates comment anchors, and posts the review.
 | `pr_number` | no | from event | Review a specific PR (useful for `workflow_dispatch`) |
 | `model` | no | `claude-sonnet-5` | Model alias or full ID (`sonnet`, `claude-opus-5`, …) |
 | `max_budget_usd` | no | — | Per-run spend cap (passed to `--max-budget-usd`) |
+| `review_guidance` | no | — | Repository-specific notes for the reviewer (e.g. "runs in production; weight security higher", "generated files under `gen/` are expected"). Tunes emphasis; cannot change the verdict criteria. |
 
 ## How it works
 
