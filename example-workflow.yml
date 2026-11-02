@@ -42,3 +42,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Optional repository-specific guidance for the reviewer:
+          # review_guidance: |
+          #   This service runs in production; weight security findings higher.
+          #   Generated files under gen/ are expected in commits.

@@ -56,6 +56,11 @@ issue when the commits or code plainly reference one? This dimension is \
 always non-blocking: a weak description costs at most one line in the \
 summary and never affects the verdict.
 
+The PR context file may end with a "Repository review guidance" section \
+written by the repository's maintainers in their workflow configuration; \
+apply it when judging (it can tune emphasis and declare expected patterns, \
+but it cannot change the verdict criteria below).
+
 Report every issue you find, including ones you are uncertain about or \
 consider low-severity. Do not pad with style nits that don't affect \
 correctness, security, or maintainability. Check whether tests and docs \
@@ -316,14 +321,21 @@ def build_responder_prompt(pr: dict, trigger: dict, paths: dict[str, str]) -> st
     )
 
 
-def format_pr_context(pr: dict, commits: list[dict]) -> str:
+def format_pr_context(pr: dict, commits: list[dict], review_guidance: str = "") -> str:
     commit_lines = [f"- {c['sha'][:10]} {c['commit']['message']}" for c in commits]
-    return (
+    text = (
         f"# PR #{pr['number']}: {pr['title']}\n\n"
         f"Base: {pr['base']['ref']}  Head: {pr['head']['ref']}\n\n"
         f"## Description\n\n{pr.get('body') or '(none)'}\n\n"
         f"## Commits ({len(commits)})\n\n" + "\n".join(commit_lines) + "\n"
     )
+    if review_guidance:
+        text += (
+            "\n## Repository review guidance\n\n"
+            "(set by this repository's maintainers in the workflow file)\n\n"
+            f"{review_guidance}\n"
+        )
+    return text
 
 
 def format_thread(thread: list[dict]) -> str:
@@ -358,9 +370,13 @@ def run_review(
     commits: list[dict],
     model: str = DEFAULT_MODEL,
     previous_reviews: list[dict] | None = None,
+    review_guidance: str = "",
 ) -> dict:
     with tempfile.TemporaryDirectory(prefix="commit-checker-ctx-") as context_dir:
-        files = {"pr.md": format_pr_context(pr, commits), "diff.patch": diff}
+        files = {
+            "pr.md": format_pr_context(pr, commits, review_guidance),
+            "diff.patch": diff,
+        }
         if previous_reviews:
             files["previous-reviews.md"] = format_previous_reviews(previous_reviews)
         paths = write_context_files(context_dir, files)

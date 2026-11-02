@@ -31,6 +31,13 @@ inputs:
     description: "Optional per-run spend cap passed to Claude Code (--max-budget-usd)."
     required: false
     default: ""
+  review_guidance:
+    description: >-
+      Optional repository-specific guidance for the reviewer, e.g. "this
+      service runs in production; weight security findings higher" or
+      "generated files under gen/ are expected in commits".
+    required: false
+    default: ""
   claude_code_version:
     description: "Claude Code npm version to install."
     required: false
@@ -65,5 +72,6 @@ runs:
         PR_NUMBER: ${{ inputs.pr_number }}
         REVIEW_MODEL: ${{ inputs.model }}
         MAX_BUDGET_USD: ${{ inputs.max_budget_usd }}
+        REVIEW_GUIDANCE: ${{ inputs.review_guidance }}
         PYTHONPATH: ${{ github.action_path }}
       run: python -m review_agent

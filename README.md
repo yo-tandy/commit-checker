@@ -51,6 +51,7 @@ enforces structured output, validates comment anchors, and posts the review.
 | `pr_number` | no | from event | Review a specific PR (useful for `workflow_dispatch`) |
 | `model` | no | `claude-sonnet-5` | Model alias or full ID (`sonnet`, `claude-opus-5`, …) |
 | `max_budget_usd` | no | — | Per-run spend cap (passed to `--max-budget-usd`) |
+| `review_guidance` | no | — | Repository-specific notes for the reviewer (e.g. "runs in production; weight security higher", "generated files under `gen/` are expected"). Tunes emphasis; cannot change the verdict criteria. |
 
 ## How it works
 
