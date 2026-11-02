@@ -1,8 +1,9 @@
 name: "Claude PR Review Agent"
 description: >
-  Reviews a pull request with Claude Code: commit quality, documentation,
-  testing, and security. Explores the checked-out codebase, posts inline
-  comments, responds to replies, and approves or requests changes.
+  Reviews a pull request with Claude Code: commit quality, PR description,
+  documentation, testing, and security. Explores the checked-out codebase,
+  posts inline comments, responds to replies, and approves or requests
+  changes.
 branding:
   icon: "eye"
   color: "orange"
